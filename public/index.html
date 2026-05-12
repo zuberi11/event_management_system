@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EventFlow — Browse Events</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ============================================
+       NAVBAR
+       ============================================ -->
+  <nav class="navbar">
+    <div class="navbar-brand">Event<span>Flow</span></div>
+    <div class="navbar-right">
+      <div id="user-info"></div>
+      <button class="btn btn-outline" id="auth-btn" onclick="openAuthModal()">Login / Register</button>
+      <button class="btn btn-danger btn-sm" id="logout-btn" style="display:none" onclick="logout()">Logout</button>
+    </div>
+  </nav>
+
+  <!-- ============================================
+       HERO
+       ============================================ -->
+  <div class="page-header container">
+    <h1>Discover & Book Events</h1>
+    <p>Browse upcoming events in your city and reserve your seat instantly.</p>
+  </div>
+
+  <!-- ============================================
+       EVENTS SECTION
+       ============================================ -->
+  <div class="container section">
+    <div id="events-container">
+      <div class="loading">Loading events...</div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       MY BOOKINGS SECTION (shown after login)
+       ============================================ -->
+  <div class="container section" id="my-bookings-section" style="display:none">
+    <div class="section-header">
+      <h2>My Bookings</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Date</th>
+            <th>Venue</th>
+            <th>Tickets</th>
+            <th>Amount Paid</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="bookings-tbody">
+          <tr><td colspan="7" class="loading">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============================================
+       AUTH MODAL (Login / Register)
+       ============================================ -->
+  <div class="modal-overlay" id="auth-modal">
+    <div class="modal">
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="switchTab('login')">Login</button>
+        <button class="auth-tab" onclick="switchTab('register')">Register</button>
+      </div>
+
+      <!-- Login Form -->
+      <div id="login-form">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeAuthModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="login()">Login</button>
+        </div>
+      </div>
+
+      <!-- Register Form -->
+      <div id="register-form" style="display:none">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="reg-name" placeholder="Your name" />
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="reg-email" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="reg-password" placeholder="Min 6 characters" />
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeAuthModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="register()">Register</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       BOOKING MODAL
+       ============================================ -->
+  <div class="modal-overlay" id="booking-modal">
+    <div class="modal">
+      <h2>Book Tickets</h2>
+      <div id="booking-event-info" style="margin-bottom:1.25rem; color:var(--text2); font-size:0.9rem;"></div>
+      <div class="form-group">
+        <label>Number of Tickets</label>
+        <input type="number" id="tickets-input" min="1" value="1" placeholder="How many tickets?" />
+      </div>
+      <div id="booking-total" style="color:var(--accent); font-family:'Syne',sans-serif; font-size:1.1rem; margin-bottom:0.5rem;"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeBookingModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmBooking()">Confirm Booking</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================
+       TOAST CONTAINER
+       ============================================ -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- ============================================
+       JAVASCRIPT
+       ============================================ -->
+  <script>
+    // ─── State
+    let currentUser     = null;
+    let selectedEventId = null;
+    let selectedEvent   = null;
+
+    // ============================================
+    //  INIT — check session on page load
+    // ============================================
+    async function init() {
+      try {
+        const res  = await fetch('/auth/me');
+        const data = await res.json();
+        if (res.ok) {
+          currentUser = data.user;
+          updateNavbar();
+        }
+      } catch (e) {}
+      loadEvents();
+    }
+
+    // ============================================
+    //  NAVBAR
+    // ============================================
+    function updateNavbar() {
+      const userInfo  = document.getElementById('user-info');
+      const authBtn   = document.getElementById('auth-btn');
+      const logoutBtn = document.getElementById('logout-btn');
+
+      if (currentUser) {
+        userInfo.innerHTML  = `Hello, <strong>${currentUser.name}</strong>`;
+        authBtn.style.display   = 'none';
+        logoutBtn.style.display = 'inline-flex';
+        document.getElementById('my-bookings-section').style.display = 'block';
+        loadMyBookings();
+      } else {
+        userInfo.innerHTML      = '';
+        authBtn.style.display   = 'inline-flex';
+        logoutBtn.style.display = 'none';
+        document.getElementById('my-bookings-section').style.display = 'none';
+      }
+    }
+
+    // ============================================
+    //  LOAD EVENTS
+    // ============================================
+    async function loadEvents() {
+      const container = document.getElementById('events-container');
+      try {
+        const res    = await fetch('/events');
+        const data   = await res.json();
+        const events = data.events;
+
+        if (!events || events.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <h3>No events yet</h3>
+              <p>Check back soon for upcoming events.</p>
+            </div>`;
+          return;
+        }
+
+        container.innerHTML = `<div class="events-grid">${events.map(renderEventCard).join('')}</div>`;
+      } catch (e) {
+        container.innerHTML = `<div class="empty-state"><p>Failed to load events.</p></div>`;
+      }
+    }
+
+    function renderEventCard(ev) {
+      const remaining = ev.tickets_remaining;
+      let ticketBadge = '';
+      if (remaining <= 0)   ticketBadge = `<span class="tickets-left sold-out">Sold Out</span>`;
+      else if (remaining <= 10) ticketBadge = `<span class="tickets-left low">${remaining} left</span>`;
+      else                  ticketBadge = `<span class="tickets-left available">${remaining} available</span>`;
+
+      const bookBtn = remaining > 0
+        ? `<button class="btn btn-primary btn-sm" onclick="openBookingModal(${ev.id})">Book Now</button>`
+        : `<button class="btn btn-outline btn-sm" disabled>Sold Out</button>`;
+
+      const price = ev.price > 0 ? `Rs ${ev.price.toLocaleString()}` : 'Free';
+
+      return `
+        <div class="event-card">
+          <h3>${ev.title}</h3>
+          <div class="event-meta">
+            <span>📅 ${formatDate(ev.date)}</span>
+            <span>📍 ${ev.venue}</span>
+            ${ev.description ? `<span>📝 ${ev.description}</span>` : ''}
+          </div>
+          <div class="event-footer">
+            <span class="price-tag">${price}</span>
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+              ${ticketBadge}
+              ${bookBtn}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ============================================
+    //  LOAD MY BOOKINGS
+    // ============================================
+    async function loadMyBookings() {
+      const tbody = document.getElementById('bookings-tbody');
+      try {
+        const res     = await fetch('/bookings/my');
+        const data    = await res.json();
+        const bookings = data.bookings;
+
+        if (!bookings || bookings.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>No bookings yet.</p></td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = bookings.map(b => `
+          <tr>
+            <td>${b.event_title}</td>
+            <td>${formatDate(b.event_date)}</td>
+            <td>${b.event_venue}</td>
+            <td>${b.tickets_booked}</td>
+            <td>Rs ${b.amount_paid.toLocaleString()}</td>
+            <td><span class="badge ${b.status === 'confirmed' ? 'badge-success' : 'badge-danger'}">${b.status}</span></td>
+            <td>
+              ${b.status === 'confirmed'
+                ? `<button class="btn btn-danger btn-sm" onclick="cancelBooking(${b.booking_id})">Cancel</button>`
+                : `<span class="badge badge-warning">Refunded</span>`}
+            </td>
+          </tr>`).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7">Failed to load bookings.</td></tr>`;
+      }
+    }
+
+    // ============================================
+    //  BOOKING MODAL
+    // ============================================
+    async function openBookingModal(eventId) {
+      if (!currentUser) {
+        showToast('Please login to book tickets.', 'error');
+        openAuthModal();
+        return;
+      }
+
+      try {
+        const res  = await fetch(`/events/${eventId}`);
+        const data = await res.json();
+        selectedEvent   = data.event;
+        selectedEventId = eventId;
+
+        document.getElementById('booking-event-info').innerHTML =
+          `<strong>${selectedEvent.title}</strong><br>
+           📅 ${formatDate(selectedEvent.date)} &nbsp; 📍 ${selectedEvent.venue}<br>
+           <span style="color:var(--accent)">Rs ${selectedEvent.price} per ticket &nbsp;|&nbsp; ${selectedEvent.tickets_remaining} tickets available</span>`;
+
+        const input = document.getElementById('tickets-input');
+        input.max   = selectedEvent.tickets_remaining;
+        input.value = 1;
+        updateTotal();
+
+        input.oninput = updateTotal;
+        document.getElementById('booking-modal').classList.add('active');
+      } catch (e) {
+        showToast('Failed to load event details.', 'error');
+      }
+    }
+
+    function updateTotal() {
+      const qty   = parseInt(document.getElementById('tickets-input').value) || 0;
+      const total = qty * (selectedEvent ? selectedEvent.price : 0);
+      document.getElementById('booking-total').textContent =
+        selectedEvent && selectedEvent.price > 0 ? `Total: Rs ${total.toLocaleString()}` : 'Free Event';
+    }
+
+    function closeBookingModal() {
+      document.getElementById('booking-modal').classList.remove('active');
+      selectedEvent = null; selectedEventId = null;
+    }
+
+    async function confirmBooking() {
+      const tickets = parseInt(document.getElementById('tickets-input').value);
+      if (!tickets || tickets < 1) { showToast('Enter a valid ticket count.', 'error'); return; }
+
+      try {
+        const res  = await fetch('/bookings', {
+          method  : 'POST',
+          headers : { 'Content-Type': 'application/json' },
+          body    : JSON.stringify({ event_id: selectedEventId, tickets_booked: tickets })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error, 'error'); return; }
+
+        showToast(`Booking confirmed! ${tickets} ticket(s) reserved.`, 'success');
+        closeBookingModal();
+        loadEvents();
+        loadMyBookings();
+      } catch (e) {
+        showToast('Booking failed. Try again.', 'error');
+      }
+    }
+
+    // ============================================
+    //  CANCEL BOOKING
+    // ============================================
+    async function cancelBooking(bookingId) {
+      if (!confirm('Cancel this booking? Your payment will be refunded.')) return;
+
+      try {
+        const res  = await fetch(`/bookings/${bookingId}/cancel`, { method: 'PUT' });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error, 'error'); return; }
+
+        showToast('Booking cancelled and payment refunded.', 'success');
+        loadMyBookings();
+        loadEvents();
+      } catch (e) {
+        showToast('Cancellation failed.', 'error');
+      }
+    }
+
+    // ============================================
+    //  AUTH MODAL
+    // ============================================
+    function openAuthModal()  { document.getElementById('auth-modal').classList.add('active'); }
+    function closeAuthModal() { document.getElementById('auth-modal').classList.remove('active'); }
+
+    function switchTab(tab) {
+      document.getElementById('login-form').style.display    = tab === 'login'    ? 'block' : 'none';
+      document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
+      document.querySelectorAll('.auth-tab').forEach((t, i) => {
+        t.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+      });
+    }
+
+    async function login() {
+      const email    = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      if (!email || !password) { showToast('Fill in all fields.', 'error'); return; }
+
+      try {
+        const res  = await fetch('/auth/login', {
+          method  : 'POST',
+          headers : { 'Content-Type': 'application/json' },
+          body    : JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error, 'error'); return; }
+
+        currentUser = data.user;
+        closeAuthModal();
+        updateNavbar();
+        showToast(`Welcome back, ${currentUser.name}!`, 'success');
+
+        if (currentUser.role === 'admin') {
+          window.location.href = '/admin';
+        }
+      } catch (e) {
+        showToast('Login failed.', 'error');
+      }
+    }
+
+    async function register() {
+      const name     = document.getElementById('reg-name').value.trim();
+      const email    = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+      if (!name || !email || !password) { showToast('Fill in all fields.', 'error'); return; }
+
+      try {
+        const res  = await fetch('/auth/register', {
+          method  : 'POST',
+          headers : { 'Content-Type': 'application/json' },
+          body    : JSON.stringify({ name, email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error, 'error'); return; }
+
+        showToast('Registered! Please login now.', 'success');
+        switchTab('login');
+      } catch (e) {
+        showToast('Registration failed.', 'error');
+      }
+    }
+
+    async function logout() {
+      await fetch('/auth/logout', { method: 'POST' });
+      currentUser = null;
+      updateNavbar();
+      loadEvents();
+      showToast('Logged out successfully.', 'success');
+    }
+
+    // ============================================
+    //  HELPERS
+    // ============================================
+    function formatDate(dateStr) {
+      return new Date(dateStr).toLocaleDateString('en-PK', {
+        year: 'numeric', month: 'long', day: 'numeric'
+      });
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast     = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 3500);
+    }
+
+    // ─── Close modals on overlay click
+    document.getElementById('auth-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeAuthModal();
+    });
+    document.getElementById('booking-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeBookingModal();
+    });
+
+    // ─── Start
+    init();
+  </script>
+
+</body>
+</html>
