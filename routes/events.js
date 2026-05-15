@@ -1,16 +1,9 @@
-// ============================================
-//  routes/events.js — Event CRUD Routes
-//  EventFlow Project
-// ============================================
-
 const express = require('express');
 const db      = require('../db');
 
 const router  = express.Router();
 
-// ============================================
-//  MIDDLEWARE — Check if user is logged in
-// ============================================
+
 
 function isLoggedIn(req, res, next) {
   if (!req.session.user) {
@@ -19,9 +12,7 @@ function isLoggedIn(req, res, next) {
   next();
 }
 
-// ============================================
-//  MIDDLEWARE — Check if user is admin
-// ============================================
+
 
 function isAdmin(req, res, next) {
   if (!req.session.user || req.session.user.role !== 'admin') {
